@@ -295,6 +295,45 @@ function Body() {
         return this.blob().then(readBlobAsArrayBuffer)
       }
     }
+  } else {
+    // igorm: aws amplify expects this.blob to exist, but react-native-windows doesn't yet have blob support
+    // that way we "fake" blob functionality a bit (just local features not high-perf streaming of data)
+    // that seems to do the trick for amplify
+    this.blob = function() {
+      class FakeBlob {
+        constructor(text) {
+          this.size = text === undefined ? 0 : text.length;
+          this.type = 'text/plain';
+
+          this.arrayBuffer = () => {
+            throw new Error("fakeBlob.arrayBuffer is not implemented");
+          };
+
+          this.slice = () => {
+            throw new Error("fakeBlob.slice is not implemented");
+          };
+
+          const getStream = () => {
+            return new ReadableStream({
+              start(controller) {
+                // igorm: converting to bytes because those will be un-converted by the amplify libs later
+                controller.enqueue(new TextEncoder("utf-8").encode(text));
+                controller.close();
+              }
+            });
+          }
+
+          this.stream = getStream;
+
+          this.getReader = () => {
+            return getStream().getReader();
+          }
+
+          this.text = () => text;
+        }
+      }
+      return Promise.resolve(new FakeBlob(this._bodyText));
+    }
   }
 
   this.text = function() {
